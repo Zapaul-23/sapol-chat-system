@@ -1,0 +1,13 @@
+{
+  "name": "sapol-chat-system",
+  "version": "1.0.0",
+  "description": "เว็บแชทเรียลไทม์ห้องเดียว สำหรับการเรียน (Node.js + Socket.IO)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "socket.io": "^4.8.0"
+  }
+}

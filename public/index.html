@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sapol Chat</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; height: 100vh; display: flex; justify-content: center; align-items: center;
+      font-family: "Segoe UI", Tahoma, sans-serif; background: #eef3f4; color: #122a31;
+    }
+    .card {
+      width: 100%; max-width: 760px; height: 100%; max-height: 640px; background: #fff;
+      border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.08);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    header {
+      padding: 14px 18px; background: #0e7c73; color: #fff; font-weight: 600;
+      display: flex; justify-content: space-between;
+    }
+    /* หน้าเข้าแชท */
+    #join { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 12px;
+            padding: 32px; width: 100%; max-width: 420px; margin: 0 auto; }
+    #join h2 { margin: 0 0 8px; text-align: center; }
+    #joinError { color: #b0435a; font-size: 14px; min-height: 20px; }
+    input { padding: 10px 12px; border: 1px solid #cfdbde; border-radius: 8px; font-size: 16px; }
+    input.error { border-color: #b0435a; }
+    button {
+      padding: 10px 16px; border: 0; border-radius: 8px; background: #0e7c73; color: #fff;
+      font-size: 16px; font-weight: 600; cursor: pointer;
+    }
+    button:hover { background: #0a615a; }
+    button:disabled { opacity: .6; cursor: default; }
+    /* หน้าแชท */
+    #chat { flex: 1; display: none; min-height: 0; }
+    #sidebar { width: 170px; border-right: 1px solid #e3ebed; background: #f5f8f9; padding: 14px 10px; overflow-y: auto; }
+    #sidebar h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: .06em; color: #8aa0a8; text-transform: uppercase; }
+    #userList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+    #userList li { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+    #userList li::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #2db36b; flex: none; }
+    #userList li.me { font-weight: 600; }
+    #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    #messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .msg { max-width: 80%; }
+    .msg .meta { font-size: 12px; color: #8aa0a8; margin-bottom: 2px; }
+    .msg .text { background: #edf2f3; padding: 8px 12px; border-radius: 12px 12px 12px 4px; word-wrap: break-word; }
+    .msg.me { align-self: flex-end; text-align: right; }
+    .msg.me .text { background: #0e7c73; color: #fff; border-radius: 12px 12px 4px 12px; text-align: left; }
+    .system { align-self: center; font-size: 13px; color: #8aa0a8; }
+    #typing { height: 20px; padding: 0 16px; font-size: 13px; color: #56707a; font-style: italic; }
+    form { display: flex; gap: 8px; padding: 8px 12px 12px; border-top: 1px solid #e3ebed; }
+    form input { flex: 1; }
+    /* จอแคบ (มือถือ): รายชื่อย้ายไปอยู่ด้านบน */
+    @media (max-width: 600px) {
+      #chat { flex-direction: column; }
+      #sidebar { width: auto; border-right: 0; border-bottom: 1px solid #e3ebed; padding: 8px 12px; }
+      #sidebar h3 { display: inline; margin-right: 8px; }
+      #userList { display: inline-flex; flex-direction: row; flex-wrap: wrap; gap: 4px 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <header><span>Sapol Chat</span><span id="me"></span></header>
+
+    <!-- หน้าเข้าแชท -->
+    <div id="join">
+      <h2>เข้าสู่ห้องแชท</h2>
+      <input id="nameInput" placeholder="ตั้งชื่อของคุณ" maxlength="20" autofocus>
+      <div id="joinError"></div>
+      <button id="joinBtn">เข้าแชท</button>
+    </div>
+
+    <!-- หน้าแชท -->
+    <div id="chat">
+      <aside id="sidebar">
+        <h3>ออนไลน์ (<span id="userCount">0</span>)</h3>
+        <ul id="userList"></ul>
+      </aside>
+      <div id="main">
+        <div id="messages"></div>
+        <div id="typing"></div>
+        <form id="form">
+          <input id="textInput" placeholder="พิมพ์ข้อความ..." maxlength="500" autocomplete="off">
+          <button>ส่ง</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const $ = (id) => document.getElementById(id);
+    let myName = '';
+
+    // ---------- เข้าแชท ----------
+    function join() {
+      const name = $('nameInput').value.trim();
+      if (!name) return showJoinError('กรุณาตั้งชื่อ');
+      $('joinBtn').disabled = true;
+
+      // ส่งชื่อไป แล้วรอ server ตอบว่าเข้าได้หรือไม่
+      socket.emit('join', name, (res) => {
+        $('joinBtn').disabled = false;
+        if (!res.ok) return showJoinError(res.error);
+
+        myName = res.name;
+        $('me').textContent = myName;
+        $('join').style.display = 'none';
+        $('chat').style.display = 'flex';
+        res.history.forEach(addMessage);
+        $('textInput').focus();
+      });
+    }
+    function showJoinError(text) {
+      $('joinError').textContent = text;
+      $('nameInput').classList.add('error');
+      $('nameInput').focus();
+    }
+    $('joinBtn').onclick = join;
+    $('nameInput').onkeydown = (e) => {
+      $('nameInput').classList.remove('error');
+      $('joinError').textContent = '';
+      if (e.key === 'Enter') join();
+    };
+
+    // ---------- ส่งข้อความ ----------
+    $('form').onsubmit = (e) => {
+      e.preventDefault();
+      const text = $('textInput').value.trim();
+      if (!text) return;
+      socket.emit('chat', text);
+      $('textInput').value = '';
+      stopTyping();
+    };
+
+    // ---------- กำลังพิมพ์ (ฝั่งเรา) ----------
+    let isTyping = false;
+    let typingTimer;
+    $('textInput').oninput = () => {
+      if (!isTyping) { isTyping = true; socket.emit('typing', true); }
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(stopTyping, 1500);   // เงียบ 1.5 วินาที = หยุดพิมพ์
+    };
+    function stopTyping() {
+      clearTimeout(typingTimer);
+      if (isTyping) { isTyping = false; socket.emit('typing', false); }
+    }
+
+    // ---------- กำลังพิมพ์ (คนอื่น) ----------
+    const typers = new Set();
+    function renderTyping() {
+      const names = [...typers];
+      $('typing').textContent =
+        names.length === 0 ? '' :
+        names.length <= 2 ? `${names.join(' และ ')} กำลังพิมพ์…` :
+        `${names.length} คนกำลังพิมพ์…`;
+    }
+
+    // ---------- แสดงผล — ใช้ textContent เสมอ เพื่อกันการฝังสคริปต์ (XSS) ----------
+    function addMessage(msg) {
+      const div = document.createElement('div');
+      div.className = 'msg' + (msg.name === myName ? ' me' : '');
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      const time = new Date(msg.time).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+      meta.textContent = msg.name === myName ? time : `${msg.name} · ${time}`;
+      const text = document.createElement('div');
+      text.className = 'text';
+      text.textContent = msg.text;
+      div.append(meta, text);
+      show(div);
+    }
+    function addSystem(text) {
+      const div = document.createElement('div');
+      div.className = 'system';
+      div.textContent = `— ${text} —`;
+      show(div);
+    }
+    function show(el) {
+      $('messages').appendChild(el);
+      $('messages').scrollTop = $('messages').scrollHeight; // เลื่อนลงล่างสุด
+    }
+    function renderUsers(list) {
+      $('userCount').textContent = list.length;
+      $('userList').replaceChildren(...list.map((name) => {
+        const li = document.createElement('li');
+        li.textContent = name === myName ? `${name} (คุณ)` : name;
+        if (name === myName) li.className = 'me';
+        return li;
+      }));
+    }
+
+    // ---------- รับ event จาก server ----------
+    socket.on('chat', (msg) => {
+      typers.delete(msg.name);           // ส่งข้อความแล้ว = ไม่ได้พิมพ์อยู่
+      renderTyping();
+      addMessage(msg);
+    });
+    socket.on('system', addSystem);
+    socket.on('users', renderUsers);
+    socket.on('typing', ({ name, isTyping }) => {
+      isTyping ? typers.add(name) : typers.delete(name);
+      renderTyping();
+    });
+  </script>
+</body>
+</html>
