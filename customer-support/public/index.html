@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sapol Support — แจ้งปัญหา</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top"><h1>🎧 Sapol Support</h1><a href="agent.html">สำหรับเจ้าหน้าที่</a></header>
+
+  <main class="narrow">
+    <form id="form" class="card" novalidate>
+      <h2 style="margin-top:0">แจ้งปัญหา / ติดต่อเจ้าหน้าที่</h2>
+      <label for="name">ชื่อ</label>
+      <input id="name" maxlength="50" autocomplete="name" required>
+      <label for="email">อีเมล</label>
+      <input id="email" type="email" maxlength="100" autocomplete="email" required>
+      <label for="category">หมวด</label>
+      <select id="category" required>
+        <option value="">— เลือกหมวด —</option>
+        <option value="general">สอบถามทั่วไป</option>
+        <option value="technical">ปัญหาการใช้งาน</option>
+        <option value="billing">การชำระเงิน</option>
+      </select>
+      <label for="subject">หัวข้อ</label>
+      <input id="subject" maxlength="100" required>
+      <label for="detail">รายละเอียด</label>
+      <textarea id="detail" maxlength="1000" required></textarea>
+      <div class="hint"><span id="count">0</span> / 1,000 ตัวอักษร</div>
+      <div class="error" id="error"></div>
+      <button class="btn" id="submit" type="submit">ส่งเรื่อง</button>
+    </form>
+
+    <section id="mine" class="card hidden" style="margin-top:16px">
+      <h3 style="margin-top:0">เรื่องที่เคยแจ้งจากเครื่องนี้</h3>
+      <ul id="mineList"></ul>
+    </section>
+  </main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const KEY = 'sapol-support-tickets';
+
+// จำ ticket ที่เคยเปิดจากเครื่องนี้ไว้ เผื่อทำลิงก์หาย (ถ้าเบราว์เซอร์ไม่ให้ใช้ storage ก็ข้ามไป)
+function loadMine() { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } }
+function saveMine(list) { try { localStorage.setItem(KEY, JSON.stringify(list.slice(0, 20))); } catch {} }
+
+function renderMine() {
+  const list = loadMine();
+  $('mine').classList.toggle('hidden', list.length === 0);
+  $('mineList').replaceChildren(...list.map((t) => {
+    const li = document.createElement('li');
+    const a = document.createElement('a');
+    a.href = `ticket.html?id=${t.id}&token=${encodeURIComponent(t.token)}`;
+    a.textContent = `${t.code} — ${t.subject}`;
+    li.append(a);
+    return li;
+  }));
+}
+
+$('detail').addEventListener('input', () => { $('count').textContent = $('detail').value.length.toLocaleString(); });
+
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('error').textContent = '';
+  const body = {
+    name: $('name').value, email: $('email').value, category: $('category').value,
+    subject: $('subject').value, detail: $('detail').value,
+  };
+  $('submit').disabled = true;
+  try {
+    const res = await fetch('/api/tickets', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    saveMine([{ id: data.id, code: data.code, token: data.token, subject: body.subject.trim() }, ...loadMine()]);
+    location.href = `ticket.html?id=${data.id}&token=${encodeURIComponent(data.token)}&new=1`;
+  } catch (err) {
+    $('error').textContent = err.message || 'ส่งไม่สำเร็จ ลองใหม่อีกครั้ง';
+    $('submit').disabled = false;
+  }
+});
+
+renderMine();
+</script>
+</body>
+</html>

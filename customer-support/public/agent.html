@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sapol Support — เจ้าหน้าที่</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top"><h1>🎧 Sapol Support · เจ้าหน้าที่</h1><span id="me"></span></header>
+
+  <!-- เข้าสู่ระบบ -->
+  <main class="narrow" id="loginView">
+    <form class="card" id="loginForm">
+      <h2 style="margin-top:0">เข้าสู่ระบบเจ้าหน้าที่</h2>
+      <label for="agentName">ชื่อที่แสดงกับลูกค้า</label>
+      <input id="agentName" maxlength="30" required>
+      <label for="agentKey">รหัสเจ้าหน้าที่</label>
+      <input id="agentKey" type="password" required>
+      <div class="hint">ค่าเริ่มต้นสำหรับการเรียน: agent123 (เปลี่ยนได้ด้วยตัวแปร AGENT_KEY)</div>
+      <div class="error" id="loginError"></div>
+      <button class="btn" type="submit">เข้าสู่ระบบ</button>
+    </form>
+  </main>
+
+  <!-- คิวงาน + รายละเอียด -->
+  <div class="agent-layout hidden" id="appView">
+    <aside class="queue">
+      <div class="tabs" id="tabs"></div>
+      <div class="ticket-list" id="list"></div>
+    </aside>
+
+    <section class="detail">
+      <div class="empty" id="empty">เลือก ticket จากรายการด้านซ้าย</div>
+      <div class="detail-head hidden" id="head">
+        <div><strong id="dCode"></strong> · <span id="dSubject"></span> <span id="dStatus" class="badge"></span> <span id="dRating" class="stars-view"></span></div>
+        <div class="hint" id="dSub"></div>
+        <div class="actions">
+          <button class="btn ghost" data-status="in_progress" type="button">กำลังดำเนินการ</button>
+          <button class="btn ok" data-status="resolved" type="button">✓ แก้ไขแล้ว</button>
+        </div>
+      </div>
+      <div class="chat hidden" id="chat" style="flex:1">
+        <div class="messages" id="messages"></div>
+        <form class="composer" id="composer">
+          <textarea id="text" maxlength="1000" placeholder="พิมพ์คำตอบ... (Enter ส่ง, Shift+Enter ขึ้นบรรทัดใหม่)"></textarea>
+          <button class="btn" type="submit">ส่ง</button>
+        </form>
+        <div class="error" id="error" style="padding:0 12px"></div>
+      </div>
+    </section>
+  </div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const STATUS = { new: 'ใหม่', in_progress: 'กำลังดำเนินการ', resolved: 'แก้ไขแล้ว' };
+const CATEGORY = { general: 'สอบถามทั่วไป', technical: 'ปัญหาการใช้งาน', billing: 'การชำระเงิน' };
+const TABS = [['all', 'ทั้งหมด'], ['new', 'ใหม่'], ['in_progress', 'กำลังดำเนินการ'], ['resolved', 'แก้ไขแล้ว']];
+const SESSION = 'sapol-support-agent';
+
+const tickets = new Map(); // id → summary
+let filter = 'all';
+let current = null;        // id ที่เปิดดูอยู่
+let myName = '';
+let shown = new Set();
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+const fmtTime = (iso) => new Date(iso).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' });
+const stars = (n) => (n ? '★'.repeat(n) + '☆'.repeat(5 - n) : '');
+
+// ---------- คิว ----------
+function renderQueue() {
+  const all = [...tickets.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  $('tabs').replaceChildren(...TABS.map(([key, label]) => {
+    const n = key === 'all' ? all.length : all.filter((t) => t.status === key).length;
+    const b = el('button', key === filter ? 'active' : '', `${label} ${n}`);
+    b.type = 'button';
+    b.addEventListener('click', () => { filter = key; renderQueue(); });
+    return b;
+  }));
+
+  const rows = all.filter((t) => filter === 'all' || t.status === filter);
+  if (!rows.length) { $('list').replaceChildren(el('div', 'empty hint', 'ไม่มี ticket')); return; }
+  $('list').replaceChildren(...rows.map((t) => {
+    const item = el('div', 'ticket-item' + (t.id === current ? ' active' : ''));
+    const row = el('div', 'row');
+    row.append(el('span', 'code', t.code), el('span', 'subj', t.subject));
+    if (t.unread && t.id !== current) row.append(el('span', 'unread', t.unread));
+    row.append(el('span', `badge ${t.status}`, STATUS[t.status]));
+    const pv = t.lastMessage ? `${t.lastMessage.sender === 'agent' ? 'จนท. ' : ''}${t.lastMessage.senderName}: ${t.lastMessage.text}` : '';
+    item.append(row, el('div', 'preview', `${t.customerName}${t.rating ? ' · ' + stars(t.rating) : ''} — ${pv}`));
+    item.addEventListener('click', () => open(t.id));
+    return item;
+  }));
+}
+
+function upsert(t) {
+  if (!t) return;
+  tickets.set(t.id, t);
+  if (t.id === current) renderHead(t);
+  renderQueue();
+}
+
+// ---------- รายละเอียด ----------
+function renderHead(t) {
+  $('dCode').textContent = t.code;
+  $('dSubject').textContent = t.subject;
+  $('dStatus').textContent = STATUS[t.status];
+  $('dStatus').className = `badge ${t.status}`;
+  $('dRating').textContent = stars(t.rating);
+  $('dSub').textContent = `${t.customerName} · ${t.email} · ${CATEGORY[t.category]} · เปิดเมื่อ ${fmtTime(t.createdAt)}`;
+  document.querySelectorAll('[data-status]').forEach((b) => { b.disabled = b.dataset.status === t.status; });
+}
+
+function addMessage(m) {
+  if (m.ticketId !== current || shown.has(m.id)) return;
+  shown.add(m.id);
+  const box = $('messages');
+  if (m.sender === 'system') {
+    box.append(el('div', 'msg system', `— ${m.text} —`));
+  } else {
+    const div = el('div', `msg ${m.sender}${m.sender === 'agent' && m.senderName === myName ? ' mine' : ''}`);
+    const who = m.sender === 'agent' ? `จนท. ${m.senderName}` : `ลูกค้า ${m.senderName}`;
+    div.append(el('div', 'meta', `${who} · ${fmtTime(m.sentAt)}`), el('div', '', m.text));
+    box.append(div);
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+function open(id) {
+  socket.emit('join', { ticketId: id }, (r) => {
+    if (!r.ok) { alertError(r.error); return; }
+    current = id;
+    shown = new Set();
+    $('messages').replaceChildren();
+    $('empty').classList.add('hidden');
+    $('head').classList.remove('hidden');
+    $('chat').classList.remove('hidden');
+    r.messages.forEach(addMessage);
+    socket.emit('read', { ticketId: id });
+    upsert({ ...r.ticket, unread: 0 });
+    $('text').focus();
+  });
+}
+
+const alertError = (msg) => { $('error').textContent = msg || ''; };
+
+// ---------- Socket ----------
+const socket = io({ autoConnect: false });
+
+function login(name, key) {
+  socket.emit('agent:login', { name, agentKey: key }, (r) => {
+    if (!r.ok) {
+      $('loginError').textContent = r.error;
+      try { sessionStorage.removeItem(SESSION); } catch {}
+      return;
+    }
+    myName = r.name;
+    try { sessionStorage.setItem(SESSION, JSON.stringify({ name, key })); } catch {}
+    $('me').textContent = `👤 ${myName}`;
+    $('loginView').classList.add('hidden');
+    $('appView').classList.remove('hidden');
+    tickets.clear();
+    r.tickets.forEach((t) => tickets.set(t.id, t));
+    renderQueue();
+    if (current) open(current); // กลับเข้าห้องเดิมหลังเชื่อมต่อใหม่
+  });
+}
+
+socket.on('connect', () => {
+  let saved = null;
+  try { saved = JSON.parse(sessionStorage.getItem(SESSION)); } catch {}
+  if (saved) login(saved.name, saved.key);
+});
+socket.on('ticket:new', upsert);
+socket.on('ticket:updated', (t) => upsert(t.id === current ? { ...t, unread: 0 } : t));
+socket.on('message', (m) => {
+  addMessage(m);
+  if (m.ticketId === current && m.sender === 'customer') socket.emit('read', { ticketId: current });
+});
+socket.connect();
+
+$('loginForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  $('loginError').textContent = '';
+  login($('agentName').value, $('agentKey').value);
+});
+
+document.querySelectorAll('[data-status]').forEach((b) => b.addEventListener('click', () => {
+  socket.emit('status', { ticketId: current, status: b.dataset.status }, (r) => alertError(r.ok ? '' : r.error));
+}));
+
+function send() {
+  const text = $('text').value.trim();
+  if (!text || !current) return;
+  alertError('');
+  socket.emit('message', { ticketId: current, text }, (r) => {
+    if (!r.ok) return alertError(r.error);
+    $('text').value = '';
+  });
+}
+$('composer').addEventListener('submit', (e) => { e.preventDefault(); send(); });
+$('text').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+});
+</script>
+</body>
+</html>

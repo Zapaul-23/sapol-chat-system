@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sapol Support — ติดตามเรื่อง</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top"><h1>🎧 Sapol Support</h1><a href="/">แจ้งเรื่องใหม่</a></header>
+
+  <div class="ticket-page">
+    <div id="notFound" class="empty hidden">ไม่พบ ticket — ตรวจสอบลิงก์อีกครั้ง</div>
+
+    <div id="info" class="ticket-info hidden">
+      <div><strong id="code"></strong> · <span id="subject"></span> <span id="status" class="badge"></span></div>
+      <div class="hint" id="sub"></div>
+      <div class="linkbox" id="linkbox">
+        <input id="link" readonly aria-label="ลิงก์ติดตามเรื่อง">
+        <button class="btn ghost" id="copy" type="button">คัดลอกลิงก์</button>
+      </div>
+      <div class="hint">📌 เก็บลิงก์นี้ไว้เพื่อกลับมาติดตามเรื่อง</div>
+    </div>
+
+    <section class="chat hidden" id="chat" style="flex:1">
+      <div class="messages" id="messages" aria-live="polite"></div>
+      <div class="rating hidden" id="rating">
+        <div id="ratingText">เรื่องนี้ได้รับการแก้ไขแล้ว — ให้คะแนนความพึงพอใจ</div>
+        <div id="stars"></div>
+      </div>
+      <form class="composer" id="composer">
+        <textarea id="text" maxlength="1000" placeholder="พิมพ์ข้อความ... (Enter ส่ง, Shift+Enter ขึ้นบรรทัดใหม่)"></textarea>
+        <button class="btn" type="submit">ส่ง</button>
+      </form>
+      <div class="error" id="error" style="padding:0 12px"></div>
+    </section>
+  </div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const ticketId = Number(params.get('id'));
+const token = params.get('token') || '';
+const STATUS = { new: 'ใหม่', in_progress: 'กำลังดำเนินการ', resolved: 'แก้ไขแล้ว' };
+const CATEGORY = { general: 'สอบถามทั่วไป', technical: 'ปัญหาการใช้งาน', billing: 'การชำระเงิน' };
+let ticket = null;
+const shown = new Set();
+
+// สร้าง element — ข้อความจากผู้ใช้ใส่ผ่าน textContent เสมอ (กัน XSS)
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+const fmtTime = (iso) => new Date(iso).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' });
+
+function addMessage(m) {
+  if (shown.has(m.id)) return;
+  shown.add(m.id);
+  const box = $('messages');
+  if (m.sender === 'system') {
+    box.append(el('div', 'msg system', `— ${m.text} —`));
+  } else {
+    const div = el('div', `msg ${m.sender}${m.sender === 'customer' ? ' mine' : ''}`);
+    const who = m.sender === 'agent' ? `จนท. ${m.senderName}` : m.senderName;
+    div.append(el('div', 'meta', `${who} · ${fmtTime(m.sentAt)}`), el('div', '', m.text));
+    box.append(div);
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+function renderTicket(t) {
+  ticket = t;
+  document.title = `${t.code} — Sapol Support`;
+  $('code').textContent = t.code;
+  $('subject').textContent = t.subject;
+  $('status').textContent = STATUS[t.status];
+  $('status').className = `badge ${t.status}`;
+  $('sub').textContent = `${CATEGORY[t.category]} · แจ้งโดย ${t.customerName} · ${fmtTime(t.createdAt)}`;
+  $('rating').classList.toggle('hidden', t.status !== 'resolved');
+  $('ratingText').textContent = t.rating
+    ? `ขอบคุณสำหรับคะแนน ${t.rating} ดาว (กดเปลี่ยนได้)`
+    : 'เรื่องนี้ได้รับการแก้ไขแล้ว — ให้คะแนนความพึงพอใจ';
+  [...$('stars').children].forEach((b, i) => b.classList.toggle('on', i < (t.rating || 0)));
+}
+
+// ปุ่มดาว 1–5
+for (let i = 1; i <= 5; i++) {
+  const b = el('button', '', '★');
+  b.type = 'button';
+  b.title = `${i} ดาว`;
+  b.addEventListener('click', () => socket.emit('rate', { ticketId, rating: i }, (r) => { if (!r.ok) $('error').textContent = r.error; }));
+  $('stars').append(b);
+}
+
+$('link').value = `${location.origin}/ticket.html?id=${ticketId}&token=${encodeURIComponent(token)}`;
+$('copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('link').value); $('copy').textContent = 'คัดลอกแล้ว ✓'; }
+  catch { $('link').select(); }
+});
+
+const socket = io();
+
+function join() {
+  socket.emit('join', { ticketId, token }, (r) => {
+    if (!r.ok) { $('notFound').classList.remove('hidden'); return; }
+    $('info').classList.remove('hidden');
+    $('chat').classList.remove('hidden');
+    renderTicket(r.ticket);
+    r.messages.forEach(addMessage);
+  });
+}
+socket.on('connect', join); // เชื่อมต่อใหม่หลังเน็ตหลุดก็เข้าห้องอีกครั้ง
+socket.on('message', addMessage);
+socket.on('ticket', renderTicket);
+
+function send() {
+  const text = $('text').value.trim();
+  if (!text) return;
+  $('error').textContent = '';
+  socket.emit('message', { ticketId, text }, (r) => {
+    if (!r.ok) { $('error').textContent = r.error; return; }
+    $('text').value = '';
+  });
+}
+$('composer').addEventListener('submit', (e) => { e.preventDefault(); send(); });
+$('text').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+});
+</script>
+</body>
+</html>

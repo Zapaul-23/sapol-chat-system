@@ -1,0 +1,21 @@
+{
+  "name": "sapol-support",
+  "version": "0.1.0",
+  "description": "ระบบ Customer Support แบบ Ticket + แชทสด สำหรับการเรียน (Node.js + Socket.IO + SQLite) — เตรียมรวมกับ Sapol Chat ในอนาคต",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "socket.io": "^4.8.0"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.4"
+  }
+}
