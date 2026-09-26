@@ -5,206 +5,528 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sapol Chat</title>
   <style>
+    :root {
+      --accent: #0e7c73; --accent-dark: #0a615a; --accent-soft: #d5efec;
+      --ink: #122a31; --muted: #56707a; --faint: #8aa0a8; --line: #e3ebed;
+      --bg: #eef3f4; --panel: #f5f8f9; --bubble: #edf2f3; --danger: #b0435a; --read: #2e8fe0; --online: #2db36b;
+    }
     * { box-sizing: border-box; }
-    body {
-      margin: 0; height: 100vh; display: flex; justify-content: center; align-items: center;
-      font-family: "Segoe UI", Tahoma, sans-serif; background: #eef3f4; color: #122a31;
-    }
-    .card {
-      width: 100%; max-width: 760px; height: 100%; max-height: 640px; background: #fff;
-      border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.08);
-      display: flex; flex-direction: column; overflow: hidden;
-    }
-    header {
-      padding: 14px 18px; background: #0e7c73; color: #fff; font-weight: 600;
-      display: flex; justify-content: space-between;
-    }
-    /* หน้าเข้าแชท */
-    #join { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 12px;
-            padding: 32px; width: 100%; max-width: 420px; margin: 0 auto; }
-    #join h2 { margin: 0 0 8px; text-align: center; }
-    #joinError { color: #b0435a; font-size: 14px; min-height: 20px; }
-    input { padding: 10px 12px; border: 1px solid #cfdbde; border-radius: 8px; font-size: 16px; }
-    input.error { border-color: #b0435a; }
-    button {
-      padding: 10px 16px; border: 0; border-radius: 8px; background: #0e7c73; color: #fff;
-      font-size: 16px; font-weight: 600; cursor: pointer;
-    }
-    button:hover { background: #0a615a; }
-    button:disabled { opacity: .6; cursor: default; }
-    /* หน้าแชท */
-    #chat { flex: 1; display: none; min-height: 0; }
-    #sidebar { width: 170px; border-right: 1px solid #e3ebed; background: #f5f8f9; padding: 14px 10px; overflow-y: auto; }
-    #sidebar h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: .06em; color: #8aa0a8; text-transform: uppercase; }
-    #userList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-    #userList li { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-    #userList li::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #2db36b; flex: none; }
-    #userList li.me { font-weight: 600; }
+    html, body { height: 100%; }
+    body { margin: 0; font-family: "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--ink);
+           display: flex; justify-content: center; align-items: center; }
+    button { font: inherit; cursor: pointer; border: 0; border-radius: 8px; padding: 8px 14px;
+             background: var(--accent); color: #fff; font-weight: 600; }
+    button:hover { background: var(--accent-dark); }
+    button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+    button.ghost:hover { background: var(--accent-soft); }
+    button.small { padding: 4px 10px; font-size: 13px; }
+    button.danger { background: transparent; color: var(--danger); border: 1px solid var(--line); }
+    input { font: inherit; padding: 9px 11px; border: 1px solid #cfdbde; border-radius: 8px; min-width: 0; }
+    input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .error { color: var(--danger); font-size: 13px; min-height: 18px; }
+    .hidden { display: none !important; }
+
+    .card { width: 100%; max-width: 980px; height: 100%; max-height: 700px; background: #fff; border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,.08); display: flex; flex-direction: column; overflow: hidden; }
+    header { padding: 12px 18px; background: var(--accent); color: #fff; font-weight: 600;
+             display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    header a { color: #fff; font-weight: 400; font-size: 14px; opacity: .9; }
+    #conn { font-size: 12px; font-weight: 400; opacity: .85; }
+
+    /* หน้าเข้าสู่ระบบ */
+    #login { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px;
+             width: 100%; max-width: 380px; margin: 0 auto; padding: 24px; }
+    #login h2 { margin: 0 0 4px; text-align: center; }
+    #login p { margin: 0 0 8px; text-align: center; color: var(--muted); font-size: 14px; }
+
+    /* หน้าแอป */
+    #app { flex: 1; display: flex; min-height: 0; }
+    #sidebar { width: 280px; border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+    .side-actions { display: flex; gap: 6px; padding: 10px; border-bottom: 1px solid var(--line); }
+    .side-actions button { flex: 1; }
+    .panel-form { padding: 10px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; background: #fff; }
+    .panel-form .row { display: flex; gap: 6px; }
+    .panel-form .row input { flex: 1; }
+    .panel-form label { font-size: 12px; color: var(--muted); }
+    #convList { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; }
+    #convList li { padding: 9px 10px; border-radius: 8px; cursor: pointer; display: grid;
+                   grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; }
+    #convList li:hover { background: #e9f0f1; }
+    #convList li.active { background: var(--accent-soft); }
+    .conv-name { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .conv-last { grid-column: 1; font-size: 12px; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .conv-time { font-size: 11px; color: var(--faint); }
+    .badge { background: var(--danger); color: #fff; border-radius: 99px; font-size: 11px; padding: 1px 7px; justify-self: end; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #c3cfd3; flex: none; }
+    .dot.on { background: var(--online); }
+    .kind { font-size: 11px; color: var(--faint); font-weight: 400; }
+
     #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-    #messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-    .msg { max-width: 80%; }
-    .msg .meta { font-size: 12px; color: #8aa0a8; margin-bottom: 2px; }
-    .msg .text { background: #edf2f3; padding: 8px 12px; border-radius: 12px 12px 12px 4px; word-wrap: break-word; }
-    .msg.me { align-self: flex-end; text-align: right; }
-    .msg.me .text { background: #0e7c73; color: #fff; border-radius: 12px 12px 4px 12px; text-align: left; }
-    .system { align-self: center; font-size: 13px; color: #8aa0a8; }
-    #typing { height: 20px; padding: 0 16px; font-size: 13px; color: #56707a; font-style: italic; }
-    form { display: flex; gap: 8px; padding: 8px 12px 12px; border-top: 1px solid #e3ebed; }
-    form input { flex: 1; }
-    /* จอแคบ (มือถือ): รายชื่อย้ายไปอยู่ด้านบน */
-    @media (max-width: 600px) {
-      #chat { flex-direction: column; }
-      #sidebar { width: auto; border-right: 0; border-bottom: 1px solid #e3ebed; padding: 8px 12px; }
-      #sidebar h3 { display: inline; margin-right: 8px; }
-      #userList { display: inline-flex; flex-direction: row; flex-wrap: wrap; gap: 4px 12px; }
+    #empty { flex: 1; display: grid; place-items: center; color: var(--muted); text-align: center; padding: 24px; }
+    #chat { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    #chatHead { padding: 10px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
+    #chatHead .title { flex: 1; min-width: 0; }
+    #chatName { font-weight: 600; }
+    #chatSub { font-size: 12px; color: var(--muted); }
+    #body { flex: 1; display: flex; min-height: 0; }
+    #msgCol { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    #messages { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+    #loadMore { align-self: center; }
+    .msg { max-width: 75%; display: flex; flex-direction: column; }
+    .msg .meta { font-size: 11px; color: var(--faint); margin: 0 4px 2px; }
+    .msg .text { background: var(--bubble); padding: 7px 11px; border-radius: 12px 12px 12px 4px; white-space: pre-wrap; word-wrap: break-word; }
+    .msg.me { align-self: flex-end; align-items: flex-end; }
+    .msg.me .text { background: var(--accent); color: #fff; border-radius: 12px 12px 4px 12px; }
+    .msg .st { font-size: 11px; color: var(--faint); margin: 2px 4px 0; }
+    .msg .st.read { color: var(--read); font-weight: 600; }
+    .msg .st.failed { color: var(--danger); }
+    .day { align-self: center; font-size: 12px; color: var(--faint); margin: 6px 0; }
+    #typing { height: 20px; padding: 0 16px; font-size: 13px; color: var(--muted); font-style: italic; }
+    #composer { display: flex; gap: 8px; padding: 8px 12px 12px; border-top: 1px solid var(--line); }
+    #composer input { flex: 1; }
+    #chatError { padding: 0 16px; }
+
+    #membersPanel { width: 230px; border-left: 1px solid var(--line); background: var(--panel); padding: 12px; overflow-y: auto;
+                    display: flex; flex-direction: column; gap: 10px; }
+    #membersPanel h3 { margin: 0; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+    #memberList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+    #memberList li { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+    #memberList li span.n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .role { font-size: 11px; color: var(--accent); }
+
+    @media (max-width: 720px) {
+      .card { max-height: none; border-radius: 0; }
+      #sidebar { width: 100%; border-right: 0; }
+      #app.in-chat #sidebar { display: none; }
+      #app:not(.in-chat) #main { display: none; }
+      #membersPanel { position: absolute; right: 0; top: 0; bottom: 0; width: 80%; box-shadow: -8px 0 24px rgba(0,0,0,.1); }
+      #body { position: relative; }
     }
+    #backBtn { display: none; }
+    @media (max-width: 720px) { #backBtn { display: inline-block; } }
   </style>
 </head>
 <body>
-  <div class="card">
-    <header><span>Sapol Chat</span><span id="me"></span></header>
+<div class="card">
+  <header>
+    <span>Sapol Chat <span id="conn"></span></span>
+    <span><span id="meName"></span> · <a href="/dashboard.html" target="_blank">Dashboard</a></span>
+  </header>
 
-    <!-- หน้าเข้าแชท -->
-    <div id="join">
-      <h2>เข้าสู่ห้องแชท</h2>
-      <input id="nameInput" placeholder="ตั้งชื่อของคุณ" maxlength="20" autofocus>
-      <div id="joinError"></div>
-      <button id="joinBtn">เข้าแชท</button>
-    </div>
-
-    <!-- หน้าแชท -->
-    <div id="chat">
-      <aside id="sidebar">
-        <h3>ออนไลน์ (<span id="userCount">0</span>)</h3>
-        <ul id="userList"></ul>
-      </aside>
-      <div id="main">
-        <div id="messages"></div>
-        <div id="typing"></div>
-        <form id="form">
-          <input id="textInput" placeholder="พิมพ์ข้อความ..." maxlength="500" autocomplete="off">
-          <button>ส่ง</button>
-        </form>
-      </div>
-    </div>
+  <!-- เข้าสู่ระบบ -->
+  <div id="login">
+    <h2>เข้าสู่ Sapol Chat</h2>
+    <p>ใช้ชื่อเดิมเพื่อกลับมาเป็นคนเดิม และเห็นประวัติแชทของคุณ</p>
+    <input id="nameInput" placeholder="ชื่อผู้ใช้" maxlength="20" autofocus>
+    <div class="error" id="loginError"></div>
+    <button id="loginBtn">เข้าสู่ระบบ</button>
   </div>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io();
-    const $ = (id) => document.getElementById(id);
-    let myName = '';
+  <!-- แอป -->
+  <div id="app" class="hidden">
+    <aside id="sidebar">
+      <div class="side-actions">
+        <button class="ghost small" id="newDmBtn">+ แชท 1:1</button>
+        <button class="ghost small" id="newGroupBtn">+ กลุ่ม</button>
+      </div>
+      <form class="panel-form hidden" id="dmForm">
+        <label for="dmName">แชทกับ (ชื่อผู้ใช้)</label>
+        <div class="row"><input id="dmName" placeholder="เช่น Ann" maxlength="20"><button>เปิด</button></div>
+        <div class="error" id="dmError"></div>
+      </form>
+      <form class="panel-form hidden" id="groupForm">
+        <label for="groupName">ชื่อกลุ่ม</label>
+        <input id="groupName" placeholder="เช่น ทีมโปรเจกต์" maxlength="30">
+        <label for="groupMembers">สมาชิก (คั่นด้วย ,)</label>
+        <input id="groupMembers" placeholder="Ann, Bob">
+        <button>สร้างกลุ่ม</button>
+        <div class="error" id="groupError"></div>
+      </form>
+      <ul id="convList"></ul>
+    </aside>
 
-    // ---------- เข้าแชท ----------
-    function join() {
-      const name = $('nameInput').value.trim();
-      if (!name) return showJoinError('กรุณาตั้งชื่อ');
-      $('joinBtn').disabled = true;
+    <main id="main">
+      <div id="empty">เลือกแชททางซ้าย หรือเริ่มแชท 1:1 / สร้างกลุ่มใหม่</div>
+      <div id="chat" class="hidden">
+        <div id="chatHead">
+          <button class="ghost small" id="backBtn">←</button>
+          <div class="title"><div id="chatName"></div><div id="chatSub"></div></div>
+          <button class="ghost small" id="membersBtn">สมาชิก</button>
+        </div>
+        <div id="body">
+          <div id="msgCol">
+            <div id="messages"></div>
+            <div id="typing"></div>
+            <div class="error" id="chatError"></div>
+            <form id="composer">
+              <input id="textInput" placeholder="พิมพ์ข้อความ..." maxlength="1000" autocomplete="off">
+              <button>ส่ง</button>
+            </form>
+          </div>
+          <aside id="membersPanel" class="hidden">
+            <h3>สมาชิก (<span id="memberCount">0</span>)</h3>
+            <ul id="memberList"></ul>
+            <form id="addMemberForm" class="hidden" style="display:flex;flex-direction:column;gap:6px">
+              <input id="addMemberName" placeholder="เพิ่มสมาชิก (ชื่อผู้ใช้)" maxlength="20">
+              <button class="small">เพิ่ม</button>
+            </form>
+            <div class="error" id="memberError"></div>
+            <button class="danger small hidden" id="leaveBtn">ออกจากกลุ่ม</button>
+          </aside>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
 
-      // ส่งชื่อไป แล้วรอ server ตอบว่าเข้าได้หรือไม่
-      socket.emit('join', name, (res) => {
-        $('joinBtn').disabled = false;
-        if (!res.ok) return showJoinError(res.error);
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+const $ = (id) => document.getElementById(id);
 
-        myName = res.name;
-        $('me').textContent = myName;
-        $('join').style.display = 'none';
-        $('chat').style.display = 'flex';
-        res.history.forEach(addMessage);
-        $('textInput').focus();
-      });
-    }
-    function showJoinError(text) {
-      $('joinError').textContent = text;
-      $('nameInput').classList.add('error');
-      $('nameInput').focus();
-    }
-    $('joinBtn').onclick = join;
-    $('nameInput').onkeydown = (e) => {
-      $('nameInput').classList.remove('error');
-      $('joinError').textContent = '';
-      if (e.key === 'Enter') join();
+// ---------- สถานะของหน้า ----------
+let me = null;                    // { id, username }
+const convs = new Map();          // conversationId → conversation
+const online = new Set();         // username ที่ online
+const typers = new Map();         // conversationId → Set(username)
+let currentId = null;             // ห้องที่เปิดอยู่
+let oldestId = null;              // ใช้โหลดข้อความเก่า
+const shown = new Map();          // messageId หรือ clientId → element ของข้อความในห้องที่เปิด
+
+// ---------- ตัวช่วย ----------
+const fmtTime = (iso) => new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+const fmtDay = (iso) => new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+const newClientId = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(16).slice(2));
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const emitAck = (event, data) => new Promise((resolve) => socket.emit(event, data, resolve));
+
+// ---------- เข้าสู่ระบบ ----------
+async function login(name) {
+  const res = await emitAck('auth', { username: name });
+  if (!res.ok) { $('loginError').textContent = res.error; return false; }
+  me = res.user;
+  sessionStorage.setItem('sapol-name', me.username);
+  $('meName').textContent = me.username;
+  online.clear(); res.online.forEach((n) => online.add(n));
+  convs.clear(); res.conversations.forEach((c) => convs.set(c.id, c));
+  $('login').classList.add('hidden');
+  $('app').classList.remove('hidden');
+  renderList();
+  if (currentId && convs.has(currentId)) openConversation(currentId);  // กลับมาหลังเน็ตหลุด
+  return true;
+}
+$('loginBtn').onclick = () => { const n = $('nameInput').value.trim(); if (n) login(n); else $('loginError').textContent = 'กรุณาตั้งชื่อ'; };
+$('nameInput').onkeydown = (e) => { $('loginError').textContent = ''; if (e.key === 'Enter') $('loginBtn').click(); };
+
+socket.on('connect', () => {
+  $('conn').textContent = '';
+  const saved = me?.username || sessionStorage.getItem('sapol-name');
+  if (saved) login(saved);                                   // เชื่อมต่อใหม่ → เข้าสู่ระบบอัตโนมัติ
+});
+socket.on('disconnect', () => { $('conn').textContent = '· กำลังเชื่อมต่อใหม่…'; });
+
+// ---------- รายการแชท ----------
+function convTitle(c) { return c.type === 'direct' ? c.name : (c.isDefault ? '# ' : '') + c.name; }
+function directOther(c) { return c.members.find((m) => m.id !== me.id)?.username; }
+
+function renderList() {
+  const list = [...convs.values()].sort((a, b) =>
+    (b.lastMessage?.sentAt ?? b.createdAt).localeCompare(a.lastMessage?.sentAt ?? a.createdAt));
+  $('convList').replaceChildren(...list.map((c) => {
+    const li = el('li'); if (c.id === currentId) li.classList.add('active');
+    const name = el('div', 'conv-name');
+    if (c.type === 'direct') name.append(el('span', 'dot' + (online.has(directOther(c)) ? ' on' : '')));
+    name.append(el('span', null, convTitle(c)));
+    if (c.type === 'group') name.append(el('span', 'kind', `${c.members.length} คน`));
+    const time = el('div', 'conv-time', c.lastMessage ? fmtTime(c.lastMessage.sentAt) : '');
+    const t = typers.get(c.id);
+    const last = el('div', 'conv-last', t?.size ? `${[...t].join(', ')} กำลังพิมพ์…`
+      : c.lastMessage ? `${c.lastMessage.sender === me.username ? 'คุณ' : c.lastMessage.sender}: ${c.lastMessage.text}` : 'ยังไม่มีข้อความ');
+    li.append(name, time, last);
+    if (c.unread && c.id !== currentId) li.append(el('span', 'badge', c.unread > 99 ? '99+' : c.unread));
+    li.onclick = () => openConversation(c.id);
+    return li;
+  }));
+}
+
+// ---------- เปิดแชท + ประวัติ ----------
+async function openConversation(id) {
+  currentId = id;
+  const c = convs.get(id);
+  $('empty').classList.add('hidden');
+  $('chat').classList.remove('hidden');
+  $('app').classList.add('in-chat');
+  $('chatError').textContent = '';
+  renderHeader(); renderMembers(); renderTyping();
+  $('messages').replaceChildren();
+  shown.clear(); oldestId = null;
+  const res = await emitAck('history:get', { conversationId: id, limit: 30 });
+  if (currentId !== id) return;
+  if (!res.ok) { $('chatError').textContent = res.error; return; }
+  renderHistory(res.messages, res.hasMore, false);
+  c.unread = 0; renderList();
+  markRead();
+  $('textInput').focus();
+}
+
+function renderHistory(messages, hasMore, prepend) {
+  const box = $('messages');
+  const prevHeight = box.scrollHeight;
+  const frag = document.createDocumentFragment();
+  if (hasMore) {
+    const b = el('button', 'ghost small', 'โหลดข้อความเก่า'); b.id = 'loadMore';
+    b.onclick = async () => {
+      b.remove();
+      const res = await emitAck('history:get', { conversationId: currentId, beforeId: oldestId, limit: 30 });
+      if (res.ok) renderHistory(res.messages, res.hasMore, true);
     };
+    frag.append(b);
+  }
+  let lastDay = null;
+  for (const m of messages) {
+    const d = fmtDay(m.sentAt);
+    if (d !== lastDay) { frag.append(el('div', 'day', d)); lastDay = d; }
+    frag.append(buildMessage(m));
+  }
+  if (messages.length) oldestId = messages[0].id;
+  if (prepend) { $('loadMore')?.remove(); box.prepend(frag); box.scrollTop = box.scrollHeight - prevHeight; }
+  else { box.append(frag); box.scrollTop = box.scrollHeight; }
+}
 
-    // ---------- ส่งข้อความ ----------
-    $('form').onsubmit = (e) => {
-      e.preventDefault();
-      const text = $('textInput').value.trim();
-      if (!text) return;
-      socket.emit('chat', text);
-      $('textInput').value = '';
-      stopTyping();
-    };
+function statusText(r, type) {
+  if (!r || r.total === 0) return { text: '✓ ส่งแล้ว', cls: '' };
+  if (type === 'group') {
+    if (r.readCount > 0) return { text: `✓✓ อ่านแล้ว ${r.readCount}/${r.total}`, cls: r.status === 'read' ? 'read' : '' };
+    return { text: r.status === 'delivered' ? '✓✓ ถึงทุกคนแล้ว' : `✓ ส่งแล้ว (ถึง ${r.deliveredCount}/${r.total})`, cls: '' };
+  }
+  if (r.status === 'read') return { text: '✓✓ อ่านแล้ว', cls: 'read' };
+  if (r.status === 'delivered') return { text: '✓✓ ถึงแล้ว', cls: '' };
+  return { text: '✓ ส่งแล้ว', cls: '' };
+}
 
-    // ---------- กำลังพิมพ์ (ฝั่งเรา) ----------
-    let isTyping = false;
-    let typingTimer;
-    $('textInput').oninput = () => {
-      if (!isTyping) { isTyping = true; socket.emit('typing', true); }
-      clearTimeout(typingTimer);
-      typingTimer = setTimeout(stopTyping, 1500);   // เงียบ 1.5 วินาที = หยุดพิมพ์
-    };
-    function stopTyping() {
-      clearTimeout(typingTimer);
-      if (isTyping) { isTyping = false; socket.emit('typing', false); }
-    }
+// แสดงข้อความด้วย textContent เสมอ (กัน XSS)
+function buildMessage(m) {
+  const mine = m.senderId === me.id;
+  const div = el('div', 'msg' + (mine ? ' me' : ''));
+  const c = convs.get(m.conversationId);
+  div.append(el('div', 'meta', mine || c?.type === 'direct' ? fmtTime(m.sentAt) : `${m.sender} · ${fmtTime(m.sentAt)}`));
+  div.append(el('div', 'text', m.text));
+  if (mine) {
+    const s = statusText(m.receipt, c?.type);
+    div.append(el('div', 'st ' + s.cls, s.text));
+  }
+  if (m.id) shown.set(m.id, div);
+  if (m.clientId) shown.set(m.clientId, div);
+  return div;
+}
 
-    // ---------- กำลังพิมพ์ (คนอื่น) ----------
-    const typers = new Set();
-    function renderTyping() {
-      const names = [...typers];
-      $('typing').textContent =
-        names.length === 0 ? '' :
-        names.length <= 2 ? `${names.join(' และ ')} กำลังพิมพ์…` :
-        `${names.length} คนกำลังพิมพ์…`;
-    }
+function setStatus(div, text, cls = '') {
+  const st = div.querySelector('.st'); if (!st) return;
+  st.textContent = text; st.className = 'st ' + cls;
+}
 
-    // ---------- แสดงผล — ใช้ textContent เสมอ เพื่อกันการฝังสคริปต์ (XSS) ----------
-    function addMessage(msg) {
-      const div = document.createElement('div');
-      div.className = 'msg' + (msg.name === myName ? ' me' : '');
-      const meta = document.createElement('div');
-      meta.className = 'meta';
-      const time = new Date(msg.time).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
-      meta.textContent = msg.name === myName ? time : `${msg.name} · ${time}`;
-      const text = document.createElement('div');
-      text.className = 'text';
-      text.textContent = msg.text;
-      div.append(meta, text);
-      show(div);
-    }
-    function addSystem(text) {
-      const div = document.createElement('div');
-      div.className = 'system';
-      div.textContent = `— ${text} —`;
-      show(div);
-    }
-    function show(el) {
-      $('messages').appendChild(el);
-      $('messages').scrollTop = $('messages').scrollHeight; // เลื่อนลงล่างสุด
-    }
-    function renderUsers(list) {
-      $('userCount').textContent = list.length;
-      $('userList').replaceChildren(...list.map((name) => {
-        const li = document.createElement('li');
-        li.textContent = name === myName ? `${name} (คุณ)` : name;
-        if (name === myName) li.className = 'me';
-        return li;
-      }));
-    }
+function appendMessage(m) {
+  const box = $('messages');
+  const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+  box.append(buildMessage(m));
+  if (nearBottom || m.senderId === me.id) box.scrollTop = box.scrollHeight;
+}
 
-    // ---------- รับ event จาก server ----------
-    socket.on('chat', (msg) => {
-      typers.delete(msg.name);           // ส่งข้อความแล้ว = ไม่ได้พิมพ์อยู่
-      renderTyping();
-      addMessage(msg);
-    });
-    socket.on('system', addSystem);
-    socket.on('users', renderUsers);
-    socket.on('typing', ({ name, isTyping }) => {
-      isTyping ? typers.add(name) : typers.delete(name);
-      renderTyping();
-    });
-  </script>
+// ---------- ส่งข้อความ ----------
+$('composer').onsubmit = async (e) => {
+  e.preventDefault();
+  const text = $('textInput').value.trim();
+  if (!text || !currentId) return;
+  $('textInput').value = '';
+  stopTyping();
+  const clientId = newClientId();
+  const convId = currentId;
+  // แสดงทันทีแบบ "กำลังส่ง" แล้วค่อยอัปเดตเมื่อ server ตอบ
+  const draft = buildMessage({ clientId, conversationId: convId, senderId: me.id, sender: me.username, text, sentAt: new Date().toISOString() });
+  setStatus(draft, '🕓 กำลังส่ง…');
+  $('messages').append(draft); $('messages').scrollTop = $('messages').scrollHeight;
+
+  const res = await emitAck('message:send', { conversationId: convId, clientId, type: 'text', text });
+  if (!res.ok) { setStatus(draft, `ส่งไม่สำเร็จ: ${res.error}`, 'failed'); return; }
+  shown.set(res.message.id, draft);
+  const s = statusText(res.message.receipt, convs.get(convId)?.type);
+  setStatus(draft, s.text, s.cls);
+};
+
+// ---------- รับข้อความ ----------
+socket.on('message:new', (m) => {
+  const c = convs.get(m.conversationId);
+  if (!c) { refreshList(); }
+  if (m.senderId !== me.id) socket.emit('message:delivered', { messageIds: [m.id] });   // ยืนยันว่าได้รับ
+
+  if (c) {
+    c.lastMessage = { id: m.id, text: m.text, sentAt: m.sentAt, sender: m.sender };
+    typers.get(m.conversationId)?.delete(m.sender);
+  }
+  if (m.conversationId === currentId) {
+    if (!shown.has(m.id) && !(m.clientId && shown.has(m.clientId))) appendMessage(m);
+    else if (m.clientId && shown.has(m.clientId)) shown.set(m.id, shown.get(m.clientId));
+    renderTyping();
+    markRead();
+  } else if (c && m.senderId !== me.id) {
+    c.unread = (c.unread || 0) + 1;
+  }
+  renderList();
+});
+
+socket.on('message:status', (r) => {
+  const div = shown.get(r.messageId); if (!div) return;
+  const s = statusText(r, convs.get(currentId)?.type);
+  setStatus(div, s.text, s.cls);
+});
+
+// อ่านแล้ว: เมื่อห้องเปิดอยู่และหน้าจอมองเห็น
+function markRead() {
+  if (!currentId || document.visibilityState !== 'visible') return;
+  const c = convs.get(currentId);
+  const upTo = c?.lastMessage?.id;
+  if (upTo) socket.emit('message:read', { conversationId: currentId, upToMessageId: upTo });
+}
+document.addEventListener('visibilitychange', markRead);
+
+// ---------- conversation / presence ----------
+async function refreshList() {
+  const res = await emitAck('conversation:list', {});
+  if (!res.ok) return;
+  res.conversations.forEach((c) => convs.set(c.id, c));
+  renderList();
+}
+socket.on('conversation:updated', (c) => {
+  const old = convs.get(c.id);
+  if (old && c.id === currentId) c.unread = 0;
+  convs.set(c.id, c);
+  renderList();
+  if (c.id === currentId) { renderHeader(); renderMembers(); }
+});
+socket.on('conversation:removed', ({ conversationId }) => {
+  convs.delete(conversationId);
+  if (conversationId === currentId) closeChat('คุณไม่ได้อยู่ในกลุ่มนี้แล้ว');
+  renderList();
+});
+socket.on('presence', ({ username, online: isOn }) => {
+  isOn ? online.add(username) : online.delete(username);
+  if (!isOn) typers.forEach((s) => s.delete(username));
+  renderList(); renderHeader(); renderMembers(); renderTyping();
+});
+
+function closeChat(msg) {
+  currentId = null;
+  $('chat').classList.add('hidden');
+  $('empty').classList.remove('hidden');
+  $('empty').textContent = msg || 'เลือกแชททางซ้าย';
+  $('app').classList.remove('in-chat');
+}
+$('backBtn').onclick = () => { closeChat(); renderList(); };
+
+function renderHeader() {
+  const c = convs.get(currentId); if (!c) return;
+  $('chatName').textContent = convTitle(c);
+  if (c.type === 'direct') {
+    $('chatSub').textContent = online.has(directOther(c)) ? '● ออนไลน์' : 'ออฟไลน์ — ข้อความจะถึงเมื่อกลับมาออนไลน์';
+  } else {
+    const n = c.members.filter((m) => online.has(m.username)).length;
+    $('chatSub').textContent = `${c.members.length} สมาชิก · ออนไลน์ ${n}`;
+  }
+  $('membersBtn').classList.toggle('hidden', c.type === 'direct');
+  if (c.type === 'direct') $('membersPanel').classList.add('hidden');
+}
+
+// ---------- สมาชิกกลุ่ม ----------
+$('membersBtn').onclick = () => $('membersPanel').classList.toggle('hidden');
+
+function renderMembers() {
+  const c = convs.get(currentId); if (!c) return;
+  const isAdmin = c.myRole === 'admin' && !c.isDefault;
+  $('memberCount').textContent = c.members.length;
+  $('memberList').replaceChildren(...c.members.map((m) => {
+    const li = el('li');
+    li.append(el('span', 'dot' + (online.has(m.username) ? ' on' : '')));
+    li.append(el('span', 'n', m.id === me.id ? `${m.username} (คุณ)` : m.username));
+    if (m.role === 'admin') li.append(el('span', 'role', 'admin'));
+    if (isAdmin && m.id !== me.id) {
+      const b = el('button', 'danger small', 'ลบ');
+      b.onclick = () => removeMember(m.username);
+      li.append(b);
+    }
+    return li;
+  }));
+  $('addMemberForm').classList.toggle('hidden', !isAdmin);
+  $('leaveBtn').classList.toggle('hidden', c.type !== 'group' || c.isDefault);
+  $('memberError').textContent = '';
+}
+
+$('addMemberForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const username = $('addMemberName').value.trim(); if (!username) return;
+  const res = await emitAck('group:addMember', { conversationId: currentId, username });
+  if (!res.ok) { $('memberError').textContent = res.error; return; }
+  $('addMemberName').value = '';
+};
+async function removeMember(username) {
+  const res = await emitAck('group:removeMember', { conversationId: currentId, username });
+  if (!res.ok) $('memberError').textContent = res.error;
+}
+// ไม่ใช้ confirm() — กดครั้งแรกเพื่อยืนยัน กดครั้งที่สองเพื่อออก
+$('leaveBtn').onclick = async () => {
+  const b = $('leaveBtn');
+  if (!b.dataset.confirm) { b.dataset.confirm = '1'; b.textContent = 'กดอีกครั้งเพื่อยืนยัน'; setTimeout(() => { delete b.dataset.confirm; b.textContent = 'ออกจากกลุ่ม'; }, 3000); return; }
+  delete b.dataset.confirm; b.textContent = 'ออกจากกลุ่ม';
+  await removeMember(me.username);
+};
+
+// ---------- สร้างแชท 1:1 / กลุ่ม ----------
+function togglePanel(id) {
+  for (const p of ['dmForm', 'groupForm']) $(p).classList.toggle('hidden', p !== id || !$(p).classList.contains('hidden'));
+  $(id).querySelector('input')?.focus();
+}
+$('newDmBtn').onclick = () => togglePanel('dmForm');
+$('newGroupBtn').onclick = () => togglePanel('groupForm');
+
+$('dmForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const res = await emitAck('dm:open', { username: $('dmName').value.trim() });
+  if (!res.ok) { $('dmError').textContent = res.error; return; }
+  $('dmError').textContent = ''; $('dmName').value = ''; $('dmForm').classList.add('hidden');
+  convs.set(res.conversation.id, res.conversation);
+  openConversation(res.conversation.id);
+};
+$('groupForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const usernames = $('groupMembers').value.split(',').map((s) => s.trim()).filter(Boolean);
+  const res = await emitAck('group:create', { name: $('groupName').value.trim(), usernames });
+  if (!res.ok) { $('groupError').textContent = res.error; return; }
+  $('groupError').textContent = ''; $('groupName').value = ''; $('groupMembers').value = ''; $('groupForm').classList.add('hidden');
+  convs.set(res.conversation.id, res.conversation);
+  openConversation(res.conversation.id);
+};
+
+// ---------- กำลังพิมพ์ ----------
+let isTyping = false, typingTimer;
+$('textInput').oninput = () => {
+  if (!currentId) return;
+  if (!isTyping) { isTyping = true; socket.emit('typing', { conversationId: currentId, isTyping: true }); }
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(stopTyping, 1500);
+};
+function stopTyping() {
+  clearTimeout(typingTimer);
+  if (isTyping && currentId) socket.emit('typing', { conversationId: currentId, isTyping: false });
+  isTyping = false;
+}
+socket.on('typing', ({ conversationId, username, isTyping: on }) => {
+  if (!typers.has(conversationId)) typers.set(conversationId, new Set());
+  on ? typers.get(conversationId).add(username) : typers.get(conversationId).delete(username);
+  renderTyping(); renderList();
+});
+function renderTyping() {
+  const names = [...(typers.get(currentId) ?? [])];
+  $('typing').textContent = !names.length ? '' : names.length <= 2 ? `${names.join(' และ ')} กำลังพิมพ์…` : `${names.length} คนกำลังพิมพ์…`;
+}
+</script>
 </body>
 </html>

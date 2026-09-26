@@ -1,0 +1,198 @@
+openapi: 3.0.3
+info:
+  title: Sapol Chat HTTP API
+  version: 3.0.0
+  description: |
+    ส่วน HTTP ของ Sapol Chat (Node.js + Express) — PDCA รอบที่ 3
+
+    - หน้าเว็บแชทและหน้า dashboard
+    - `GET /api/metrics` ตัวเลขตอบ Business Questions Q1–Q6
+    - จุดเชื่อมต่อ Socket.IO
+
+    **การแชททั้งหมด (1:1, กลุ่ม, สถานะข้อความ ฯลฯ) อยู่บน Socket.IO** ดูรายละเอียดใน `asyncapi.yaml`
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+# ไม่มีระบบรหัสผ่าน — ทุก endpoint เปิดให้ใช้ได้โดยไม่ต้องยืนยันตัวตน
+security: []
+servers:
+  - url: http://localhost:3000
+    description: เครื่องที่รันด้วย npm start
+tags:
+  - name: Web
+    description: ไฟล์หน้าเว็บ
+  - name: Analytics
+    description: ตัวชี้วัดสำหรับ dashboard
+  - name: Socket.IO
+    description: ช่องทางเชื่อมต่อเรียลไทม์ (รายละเอียด event อยู่ใน asyncapi.yaml)
+
+paths:
+  /:
+    get:
+      tags: [Web]
+      summary: หน้าเว็บแชท
+      operationId: getChatPage
+      responses:
+        '200':
+          description: public/index.html
+          content:
+            text/html:
+              schema: { type: string }
+        '404':
+          description: ไม่พบไฟล์
+  /dashboard.html:
+    get:
+      tags: [Web]
+      summary: หน้า dashboard ตอบ Q1–Q6
+      operationId: getDashboardPage
+      responses:
+        '200':
+          description: public/dashboard.html
+          content:
+            text/html:
+              schema: { type: string }
+        '404':
+          description: ไม่พบไฟล์
+
+  /api/metrics:
+    get:
+      tags: [Analytics]
+      summary: ตัวชี้วัดตอบ Business Questions Q1–Q6
+      description: |
+        คำนวณจากตาราง `events` (Domain Events) และ `receipts`
+        - วันที่จัดกลุ่มตามเวลาไทย (UTC+7)
+        - DAU = ผู้ใช้ไม่ซ้ำที่ส่งหรืออ่านข้อความ · MAU = ย้อนหลัง 30 วันเสมอ
+        - latency = เวลาที่เครื่องผู้รับยืนยัน − เวลาที่ server บันทึกข้อความ
+      operationId: getMetrics
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: จำนวนวันย้อนหลัง
+          schema: { type: integer, minimum: 1, maximum: 365, default: 30 }
+      responses:
+        '200':
+          description: ผลตัวชี้วัด
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Metrics' }
+        '400':
+          description: ไม่ใช้ (ค่า days ที่ผิดจะถูกปรับเป็นค่าเริ่มต้น 30)
+
+  /socket.io/socket.io.js:
+    get:
+      tags: [Socket.IO]
+      summary: ไลบรารี Socket.IO ฝั่ง client (server สร้างให้อัตโนมัติ)
+      operationId: getSocketIoClient
+      responses:
+        '200':
+          description: ไฟล์ JavaScript
+          content:
+            application/javascript:
+              schema: { type: string }
+        '404':
+          description: ไม่พบไฟล์
+  # Socket.IO ต้องมี / ปิดท้ายจริง (/socket.io ไม่มี / ได้ 404)
+  /socket.io/:
+    get:
+      tags: [Socket.IO]
+      summary: จุดเชื่อมต่อ Socket.IO (Engine.IO handshake)
+      description: ไลบรารีเรียกเอง เริ่มด้วย HTTP long-polling แล้วอัปเกรดเป็น WebSocket
+      operationId: socketIoHandshake
+      parameters:
+        - { name: EIO, in: query, required: true, schema: { type: string, example: '4' } }
+        - { name: transport, in: query, required: true, schema: { type: string, enum: [polling, websocket] } }
+        - { name: sid, in: query, required: false, schema: { type: string } }
+      responses:
+        '101': { description: อัปเกรดเป็น WebSocket สำเร็จ }
+        '200':
+          description: ข้อมูล handshake / แพ็กเก็ต polling
+          content:
+            text/plain:
+              schema: { type: string }
+        '400': { description: พารามิเตอร์ไม่ถูกต้อง หรือ session หมดอายุ }
+
+components:
+  schemas:
+    Timing:
+      type: object
+      description: สรุปเวลาเป็นมิลลิวินาที (null = ยังไม่มีข้อมูล)
+      properties:
+        count: { type: integer }
+        avgMs: { type: integer, nullable: true }
+        p50Ms: { type: integer, nullable: true }
+        p95Ms: { type: integer, nullable: true }
+    Metrics:
+      type: object
+      properties:
+        generatedAt: { type: string, format: date-time }
+        range:
+          type: object
+          properties:
+            from: { type: string, format: date-time }
+            to: { type: string, format: date-time }
+            days: { type: integer }
+        q1_messagesPerDay:
+          description: Q1 มีข้อความถูกส่งกี่ข้อความต่อวัน
+          type: object
+          properties:
+            total: { type: integer }
+            perDay:
+              type: array
+              items:
+                type: object
+                properties:
+                  day: { type: string, format: date, example: '2026-09-26' }
+                  messages: { type: integer }
+        q2_activeUsers:
+          description: Q2 DAU/MAU
+          type: object
+          properties:
+            dauToday: { type: integer }
+            avgDau: { type: number }
+            mau: { type: integer }
+            stickiness: { type: number, nullable: true, description: avgDau ÷ mau }
+            perDay:
+              type: array
+              items:
+                type: object
+                properties:
+                  day: { type: string, format: date }
+                  dau: { type: integer }
+        q3_mostActiveConversations:
+          description: Q3 ห้องที่ active ที่สุด 5 อันดับ
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              type: { type: string, enum: [direct, group] }
+              name: { type: string, example: HAT ↔ Ann }
+              messages: { type: integer }
+              senders: { type: integer }
+        q4_deliveryLatency:
+          description: Q4 message delivery latency
+          type: object
+          properties:
+            all: { $ref: '#/components/schemas/Timing' }
+            recipientOnline: { $ref: '#/components/schemas/Timing' }
+            recipientOffline: { $ref: '#/components/schemas/Timing' }
+        q5_sendFailures:
+          description: Q5 ข้อความที่ส่งไม่สำเร็จ
+          type: object
+          properties:
+            attempted: { type: integer }
+            failed: { type: integer }
+            failedPct: { type: number }
+            byReason:
+              type: array
+              items:
+                type: object
+                properties:
+                  reason: { type: string, enum: [empty, too_long, not_member, rate_limited, unsupported_type, db_error] }
+                  n: { type: integer }
+            undeliveredOver24h: { type: integer, description: ข้อความที่ค้างไม่ถึงผู้รับเกิน 24 ชม. }
+        q6_timeToRead:
+          allOf:
+            - $ref: '#/components/schemas/Timing'
+          description: Q6 เวลาจากได้รับถึงอ่าน

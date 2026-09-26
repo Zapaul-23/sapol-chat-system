@@ -1,0 +1,481 @@
+asyncapi: 3.0.0
+info:
+  title: Sapol Chat Socket.IO API
+  version: 3.0.0
+  description: |
+    Event แบบเรียลไทม์ของ Sapol Chat — PDCA รอบที่ 3
+    แชท 1:1, กลุ่ม + สมาชิก, ประวัติข้อความ, สถานะ `sent / delivered / read` และส่งตอนผู้รับ offline
+
+    **มุมมองของเอกสาร:** จากฝั่ง server (`src/server.js`)
+    - `receive` = server รับ event จากเบราว์เซอร์ · `send` = server ส่ง event ไปหาเบราว์เซอร์
+    - event ที่มี `reply` คือ Socket.IO acknowledgement (callback) — ทุก reply มี `ok: true | false`
+
+    **ลำดับการใช้งาน:** เชื่อมต่อ → `auth` → server ส่ง `message:new` ของข้อความที่ค้างตอน offline →
+    client ตอบ `message:delivered` → เปิดห้องด้วย `history:get` → อ่านแล้วส่ง `message:read`
+
+    **การส่งถึงผู้รับ:** server ใส่ทุกแท็บของผู้ใช้ 1 คนไว้ใน Socket.IO room `user:<id>`
+    แล้วส่งหาสมาชิกแต่ละคนผ่าน room นั้น
+
+    ```js
+    const socket = io('http://localhost:3000');
+    const res = await socket.emitWithAck('auth', { username: 'HAT' });
+    const dm = await socket.emitWithAck('dm:open', { username: 'Ann' });
+    await socket.emitWithAck('message:send', {
+      conversationId: dm.conversation.id, clientId: crypto.randomUUID(), type: 'text', text: 'สวัสดี',
+    });
+    socket.on('message:new', (m) => socket.emit('message:delivered', { messageIds: [m.id] }));
+    ```
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  tags:
+    - name: session
+    - name: conversation
+    - name: message
+    - name: receipt
+    - name: presence
+
+defaultContentType: application/json
+
+servers:
+  local:
+    host: localhost:3000
+    pathname: /socket.io/
+    protocol: ws
+    description: Socket.IO server (`npm start`) — ต้องเชื่อมผ่านไลบรารี Socket.IO
+
+channels:
+  chat:
+    address: /
+    title: namespace หลักของ Socket.IO
+    servers:
+      - $ref: '#/servers/local'
+    messages:
+      auth: { $ref: '#/components/messages/auth' }
+      authResult: { $ref: '#/components/messages/authResult' }
+      conversationList: { $ref: '#/components/messages/conversationList' }
+      conversationListResult: { $ref: '#/components/messages/conversationListResult' }
+      dmOpen: { $ref: '#/components/messages/dmOpen' }
+      groupCreate: { $ref: '#/components/messages/groupCreate' }
+      conversationResult: { $ref: '#/components/messages/conversationResult' }
+      groupAddMember: { $ref: '#/components/messages/groupAddMember' }
+      groupRemoveMember: { $ref: '#/components/messages/groupRemoveMember' }
+      okResult: { $ref: '#/components/messages/okResult' }
+      historyGet: { $ref: '#/components/messages/historyGet' }
+      historyResult: { $ref: '#/components/messages/historyResult' }
+      messageSend: { $ref: '#/components/messages/messageSend' }
+      messageSendResult: { $ref: '#/components/messages/messageSendResult' }
+      messageDelivered: { $ref: '#/components/messages/messageDelivered' }
+      messageRead: { $ref: '#/components/messages/messageRead' }
+      typingSend: { $ref: '#/components/messages/typingSend' }
+      messageNew: { $ref: '#/components/messages/messageNew' }
+      messageStatus: { $ref: '#/components/messages/messageStatus' }
+      conversationUpdated: { $ref: '#/components/messages/conversationUpdated' }
+      conversationRemoved: { $ref: '#/components/messages/conversationRemoved' }
+      presence: { $ref: '#/components/messages/presence' }
+      typingEvent: { $ref: '#/components/messages/typingEvent' }
+
+operations:
+  # ================= server รับจาก client =================
+  receiveAuth:
+    action: receive
+    channel: { $ref: '#/channels/chat' }
+    summary: เข้าสู่ระบบด้วย username (ชื่อใหม่ = สมัครอัตโนมัติ, ชื่อเดิม = คนเดิม)
+    description: สำเร็จแล้ว server ใส่ผู้ใช้เข้าห้อง general, ส่ง `presence` ถ้าเพิ่ง online และส่ง `message:new` ของข้อความที่ค้าง
+    tags: [{ name: session }]
+    messages: [{ $ref: '#/channels/chat/messages/auth' }]
+    reply:
+      channel: { $ref: '#/channels/chat' }
+      messages: [{ $ref: '#/channels/chat/messages/authResult' }]
+
+  receiveConversationList:
+    action: receive
+    channel: { $ref: '#/channels/chat' }
+    summary: ขอรายการ conversation ของตัวเองใหม่
+    tags: [{ name: conversation }]
+    messages: [{ $ref: '#/channels/chat/messages/conversationList' }]
+    reply:
+      channel: { $ref: '#/channels/chat' }
+      messages: [{ $ref: '#/channels/chat/messages/conversationListResult' }]
+
+  receiveDmOpen:
+    action: receive
+    channel: { $ref: '#/channels/chat' }
+    summary: เปิดแชท 1:1 (ถ้ามีอยู่แล้วคืนห้องเดิม)
+    tags: [{ name: conversation }]
+    messages: [{ $ref: '#/channels/chat/messages/dmOpen' }]
+    reply:
+      channel: { $ref: '#/channels/chat' }
+      messages: [{ $ref: '#/channels/chat/messages/conversationResult' }]
+
+  receiveGroupCreate:
+    action: receive
+    channel: { $ref: '#/channels/chat' }
+    summary: สร้างกลุ่ม ผู้สร้างเป็น admin
+    tags: [{ name: conversation }]
+    messages: [{ $ref: '#/channels/chat/messages/groupCreate' }]
+    reply:
+      channel: { $ref: '#/channels/chat' }
+      messages: [{ $ref: '#/channels/chat/messages/conversationResult' }]
+
+  receiveGroupAddMember:
+    action: receive
+    channel: { $ref: '#/channels/chat' }
+    summary: เพิ่มสมาชิก (admin เท่านั้น, ห้อง general เพิ่ม/ลบไม่ได้)
+    tags: [{ name: conversation }]
+    messages: [{ $ref: '#/channels/chat/messages/groupAddMember' }]
+    reply:
+      channel: { $ref: '#/channels/chat' }
+      messages: [{ $ref: '#/channels/chat/messages/okResult' }]
+
+  receiveGroupRemoveMember:
+    action: receive
+    channel: { $ref: '#/channels/chat' }
+    summary: ลบสมาชิก (admin ลบคนอื่นได้ · ทุกคนลบตัวเองได้ = ออกจากกลุ่ม)
+    description: ข้อความที่ยังไม่ถึงคนที่ถูกลบจะถูกยกเลิก และคนนั้นได้รับ `conversation:removed`
+    tags: [{ name: conversation }]
+    messages: [{ $ref: '#/channels/chat/messages/groupRemoveMember' }]
+    reply:
+      channel: { $ref: '#/channels/chat' }
+      messages: [{ $ref: '#/channels/chat/messages/okResult' }]
+
+  receiveHistoryGet:
+    action: receive
+    channel: { $ref: '#/channels/chat' }
+    summary: ดึงประวัติข้อความแบบแบ่งหน้า (เฉพาะสมาชิก)
+    tags: [{ name: message }]
+    messages: [{ $ref: '#/channels/chat/messages/historyGet' }]
+    reply:
+      channel: { $ref: '#/channels/chat' }
+      messages: [{ $ref: '#/channels/chat/messages/historyResult' }]
+
+  receiveMessageSend:
+    action: receive
+    channel: { $ref: '#/channels/chat' }
+    summary: ส่งข้อความ → server บันทึก, สร้าง receipt ให้ผู้รับทุกคน แล้วส่ง `message:new` ให้สมาชิก
+    description: |
+      ถูกปฏิเสธเมื่อ `empty`, `too_long` (> 1,000), `not_member`, `rate_limited` (> 5 ข้อความ/วินาที),
+      `unsupported_type`, `db_error` — ทุกกรณีบันทึก Domain Event `MessageSendFailed`
+      ส่งซ้ำด้วย `clientId` เดิม ได้ข้อความเดิมกลับมา (ไม่สร้างใหม่ ไม่กระจายซ้ำ)
+    tags: [{ name: message }]
+    messages: [{ $ref: '#/channels/chat/messages/messageSend' }]
+    reply:
+      channel: { $ref: '#/channels/chat' }
+      messages: [{ $ref: '#/channels/chat/messages/messageSendResult' }]
+
+  receiveMessageDelivered:
+    action: receive
+    channel: { $ref: '#/channels/chat' }
+    summary: เครื่องผู้รับยืนยันว่าได้รับข้อความ (นับครั้งเดียวต่อผู้รับ แม้เปิดหลายแท็บ)
+    tags: [{ name: receipt }]
+    messages: [{ $ref: '#/channels/chat/messages/messageDelivered' }]
+
+  receiveMessageRead:
+    action: receive
+    channel: { $ref: '#/channels/chat' }
+    summary: ผู้รับอ่านข้อความใน conversation ถึง id ที่กำหนดแล้ว
+    tags: [{ name: receipt }]
+    messages: [{ $ref: '#/channels/chat/messages/messageRead' }]
+
+  receiveTyping:
+    action: receive
+    channel: { $ref: '#/channels/chat' }
+    summary: เริ่ม/หยุดพิมพ์ใน conversation
+    tags: [{ name: presence }]
+    messages: [{ $ref: '#/channels/chat/messages/typingSend' }]
+
+  # ================= server ส่งหา client =================
+  sendMessageNew:
+    action: send
+    channel: { $ref: '#/channels/chat' }
+    summary: ข้อความใหม่ ส่งหาสมาชิกทุกคน (รวมแท็บอื่นของผู้ส่ง) และข้อความที่ค้างตอน offline หลัง auth
+    tags: [{ name: message }]
+    messages: [{ $ref: '#/channels/chat/messages/messageNew' }]
+
+  sendMessageStatus:
+    action: send
+    channel: { $ref: '#/channels/chat' }
+    summary: สถานะข้อความเปลี่ยน — ส่งหาผู้ส่งเท่านั้น
+    tags: [{ name: receipt }]
+    messages: [{ $ref: '#/channels/chat/messages/messageStatus' }]
+
+  sendConversationUpdated:
+    action: send
+    channel: { $ref: '#/channels/chat' }
+    summary: conversation ถูกสร้าง/สมาชิกเปลี่ยน — ส่งหาสมาชิกทุกคน (ข้อมูลในมุมมองของแต่ละคน)
+    tags: [{ name: conversation }]
+    messages: [{ $ref: '#/channels/chat/messages/conversationUpdated' }]
+
+  sendConversationRemoved:
+    action: send
+    channel: { $ref: '#/channels/chat' }
+    summary: ผู้ใช้ถูกลบ/ออกจากกลุ่ม — ส่งหาคนนั้น
+    tags: [{ name: conversation }]
+    messages: [{ $ref: '#/channels/chat/messages/conversationRemoved' }]
+
+  sendPresence:
+    action: send
+    channel: { $ref: '#/channels/chat' }
+    summary: ผู้ใช้ online (แท็บแรก) / offline (ปิดแท็บสุดท้าย) — ส่งหาทุกคน
+    tags: [{ name: presence }]
+    messages: [{ $ref: '#/channels/chat/messages/presence' }]
+
+  sendTyping:
+    action: send
+    channel: { $ref: '#/channels/chat' }
+    summary: มีคนเริ่ม/หยุดพิมพ์ — ส่งหาสมาชิกคนอื่นในห้อง (ไม่ส่งกลับคนพิมพ์)
+    tags: [{ name: presence }]
+    messages: [{ $ref: '#/channels/chat/messages/typingEvent' }]
+
+components:
+  messages:
+    auth:
+      name: auth
+      payload:
+        type: object
+        required: [username]
+        properties:
+          username: { $ref: '#/components/schemas/Username' }
+      examples: [{ name: เข้าสู่ระบบ, payload: { username: HAT } }]
+    authResult:
+      name: auth (ack)
+      payload:
+        oneOf:
+          - type: object
+            required: [ok, user, conversations, online]
+            properties:
+              ok: { const: true }
+              user: { $ref: '#/components/schemas/User' }
+              conversations: { type: array, items: { $ref: '#/components/schemas/Conversation' } }
+              online: { type: array, items: { $ref: '#/components/schemas/Username' }, description: ชื่อคนที่ online อยู่ }
+          - $ref: '#/components/schemas/Error'
+    conversationList:
+      name: conversation:list
+      payload: { type: object }
+    conversationListResult:
+      name: conversation:list (ack)
+      payload:
+        type: object
+        properties:
+          ok: { const: true }
+          conversations: { type: array, items: { $ref: '#/components/schemas/Conversation' } }
+    dmOpen:
+      name: dm:open
+      payload:
+        type: object
+        required: [username]
+        properties:
+          username: { $ref: '#/components/schemas/Username' }
+      examples: [{ name: แชทกับ Ann, payload: { username: Ann } }]
+    groupCreate:
+      name: group:create
+      payload:
+        type: object
+        required: [name]
+        properties:
+          name: { type: string, minLength: 1, maxLength: 30 }
+          usernames: { type: array, items: { $ref: '#/components/schemas/Username' } }
+      examples: [{ name: สร้างกลุ่ม, payload: { name: ทีมโปรเจกต์, usernames: [Ann, Bob] } }]
+    conversationResult:
+      name: dm:open / group:create (ack)
+      payload:
+        oneOf:
+          - type: object
+            required: [ok, conversation]
+            properties:
+              ok: { const: true }
+              conversation: { $ref: '#/components/schemas/Conversation' }
+          - $ref: '#/components/schemas/Error'
+    groupAddMember:
+      name: group:addMember
+      payload: { $ref: '#/components/schemas/MemberChange' }
+    groupRemoveMember:
+      name: group:removeMember
+      payload: { $ref: '#/components/schemas/MemberChange' }
+    okResult:
+      name: ack
+      payload:
+        oneOf:
+          - type: object
+            properties: { ok: { const: true } }
+          - $ref: '#/components/schemas/Error'
+    historyGet:
+      name: history:get
+      payload:
+        type: object
+        required: [conversationId]
+        properties:
+          conversationId: { type: integer }
+          beforeId: { type: integer, description: ดึงข้อความที่ id น้อยกว่านี้ (ไม่ใส่ = ล่าสุด) }
+          limit: { type: integer, minimum: 1, maximum: 100, default: 30 }
+    historyResult:
+      name: history:get (ack)
+      payload:
+        oneOf:
+          - type: object
+            required: [ok, messages, hasMore]
+            properties:
+              ok: { const: true }
+              messages: { type: array, items: { $ref: '#/components/schemas/Message' }, description: เรียงเก่า → ใหม่ }
+              hasMore: { type: boolean }
+          - $ref: '#/components/schemas/Error'
+    messageSend:
+      name: message:send
+      payload:
+        type: object
+        required: [conversationId, text]
+        properties:
+          conversationId: { type: integer }
+          clientId: { type: string, maxLength: 64, description: UUID ที่ client สร้าง ใช้กันข้อความซ้ำ }
+          type: { type: string, enum: [text], default: text, description: image/file เป็น extension ภายหลัง }
+          text: { type: string, minLength: 1, maxLength: 1000 }
+      examples:
+        - name: ส่งข้อความ
+          payload: { conversationId: 2, clientId: 6f1c0f7e-3a1b-4c55-9f11-0d2d3c1a9b10, type: text, text: สวัสดีครับ }
+    messageSendResult:
+      name: message:send (ack)
+      payload:
+        oneOf:
+          - type: object
+            required: [ok, message]
+            properties:
+              ok: { const: true }
+              message: { $ref: '#/components/schemas/Message' }
+          - type: object
+            required: [ok, error, reason]
+            properties:
+              ok: { const: false }
+              error: { type: string }
+              reason: { type: string, enum: [empty, too_long, not_member, rate_limited, unsupported_type, db_error] }
+    messageDelivered:
+      name: message:delivered
+      payload:
+        type: object
+        required: [messageIds]
+        properties:
+          messageIds: { type: array, maxItems: 500, items: { type: integer } }
+    messageRead:
+      name: message:read
+      payload:
+        type: object
+        required: [conversationId, upToMessageId]
+        properties:
+          conversationId: { type: integer }
+          upToMessageId: { type: integer }
+    typingSend:
+      name: typing
+      payload:
+        type: object
+        required: [conversationId, isTyping]
+        properties:
+          conversationId: { type: integer }
+          isTyping: { type: boolean }
+    messageNew:
+      name: message:new
+      payload: { $ref: '#/components/schemas/Message' }
+    messageStatus:
+      name: message:status
+      payload: { $ref: '#/components/schemas/Receipt' }
+      examples:
+        - name: อ่านแล้ว 1 จาก 2 คน (กลุ่ม)
+          payload: { messageId: 15, status: delivered, total: 2, deliveredCount: 2, readCount: 1 }
+    conversationUpdated:
+      name: conversation:updated
+      payload: { $ref: '#/components/schemas/Conversation' }
+    conversationRemoved:
+      name: conversation:removed
+      payload:
+        type: object
+        properties:
+          conversationId: { type: integer }
+    presence:
+      name: presence
+      payload:
+        type: object
+        required: [username, online]
+        properties:
+          username: { $ref: '#/components/schemas/Username' }
+          online: { type: boolean }
+    typingEvent:
+      name: typing
+      payload:
+        type: object
+        required: [conversationId, username, isTyping]
+        properties:
+          conversationId: { type: integer }
+          username: { $ref: '#/components/schemas/Username' }
+          isTyping: { type: boolean }
+
+  schemas:
+    Username:
+      type: string
+      minLength: 1
+      maxLength: 20
+      description: ไม่สนตัวพิมพ์เล็ก/ใหญ่ (HAT = hat)
+    User:
+      type: object
+      required: [id, username]
+      properties:
+        id: { type: integer }
+        username: { $ref: '#/components/schemas/Username' }
+    Member:
+      type: object
+      properties:
+        id: { type: integer }
+        username: { $ref: '#/components/schemas/Username' }
+        role: { type: string, enum: [admin, member] }
+    Conversation:
+      type: object
+      required: [id, type, name, members]
+      properties:
+        id: { type: integer }
+        type: { type: string, enum: [direct, group] }
+        name: { type: string, description: direct = ชื่อคู่สนทนา, group = ชื่อกลุ่ม }
+        isDefault: { type: boolean, description: true = ห้อง general ที่ทุกคนอยู่ }
+        myRole: { type: [string, 'null'], enum: [admin, member, null] }
+        members: { type: array, items: { $ref: '#/components/schemas/Member' } }
+        lastMessage:
+          type: [object, 'null']
+          properties:
+            id: { type: integer }
+            text: { type: string }
+            sentAt: { type: string, format: date-time }
+            sender: { $ref: '#/components/schemas/Username' }
+        unread: { type: integer, description: จำนวนข้อความที่ผู้ใช้คนนี้ยังไม่อ่าน }
+        createdAt: { type: string, format: date-time }
+    Message:
+      type: object
+      required: [id, conversationId, senderId, sender, type, text, sentAt]
+      properties:
+        id: { type: integer }
+        conversationId: { type: integer }
+        senderId: { type: integer }
+        sender: { $ref: '#/components/schemas/Username' }
+        clientId: { type: [string, 'null'] }
+        type: { type: string, enum: [text] }
+        text: { type: string, description: ข้อความดิบ — client ต้องแสดงด้วย textContent (กัน XSS) }
+        sentAt: { type: string, format: date-time, description: เวลาที่ server บันทึก }
+        receipt: { $ref: '#/components/schemas/Receipt' }
+    Receipt:
+      type: object
+      required: [messageId, status, total, deliveredCount, readCount]
+      description: |
+        สรุปสถานะจากผู้รับทุกคน · sent = server บันทึกแล้ว · delivered = ถึงผู้รับครบทุกคน · read = อ่านครบทุกคน
+      properties:
+        messageId: { type: integer }
+        status: { type: string, enum: [sent, delivered, read] }
+        total: { type: integer, description: จำนวนผู้รับ (ไม่รวมผู้ส่ง) }
+        deliveredCount: { type: integer }
+        readCount: { type: integer }
+    MemberChange:
+      type: object
+      required: [conversationId, username]
+      properties:
+        conversationId: { type: integer }
+        username: { $ref: '#/components/schemas/Username' }
+    Error:
+      type: object
+      required: [ok, error]
+      properties:
+        ok: { const: false }
+        error: { type: string, description: ข้อความอธิบายที่แสดงให้ผู้ใช้เห็นได้ }

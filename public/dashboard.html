@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sapol Chat — Dashboard</title>
+  <style>
+    :root { --accent: #0e7c73; --soft: #d5efec; --ink: #122a31; --muted: #56707a; --faint: #8aa0a8; --line: #e3ebed; --bg: #eef3f4; --danger: #b0435a; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", Tahoma, sans-serif; background: var(--bg); color: var(--ink); padding: 24px 16px 48px; }
+    .wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 16px; }
+    header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px; }
+    h1 { margin: 0; font-size: 1.5rem; }
+    .sub { color: var(--muted); font-size: 13px; }
+    select, a.btn { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); text-decoration: none; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 10px; align-content: start; }
+    .q { font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: .04em; }
+    h2 { margin: 0; font-size: 1rem; }
+    .big { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .big small { font-size: .9rem; color: var(--muted); font-weight: 400; }
+    .stats { display: flex; flex-wrap: wrap; gap: 18px; }
+    .stat b { display: block; font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+    .stat span { font-size: 12px; color: var(--muted); }
+    .bars { display: grid; gap: 6px; }
+    .bar { display: grid; grid-template-columns: 90px 1fr 44px; gap: 8px; align-items: center; font-size: 13px; }
+    .bar .track { height: 14px; background: #edf2f3; border-radius: 4px; overflow: hidden; }
+    .bar .fill { height: 100%; background: var(--accent); border-radius: 4px; }
+    .bar .v { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+    .bar .l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+    th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px; border-bottom: 1px solid var(--line); padding: 4px 6px; }
+    td { padding: 5px 6px; border-bottom: 1px solid var(--line); }
+    td.n { text-align: right; }
+    .empty { color: var(--faint); font-size: 13px; }
+    .bad { color: var(--danger); }
+    .note { font-size: 12px; color: var(--faint); }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Sapol Chat · Dashboard</h1>
+      <div class="sub" id="meta">กำลังโหลด…</div>
+    </div>
+    <div>
+      <label for="days" class="sub">ช่วงเวลา</label>
+      <select id="days">
+        <option value="1">1 วัน</option><option value="7" selected>7 วัน</option><option value="30">30 วัน</option><option value="90">90 วัน</option>
+      </select>
+      <a class="btn" href="/">← กลับไปแชท</a>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="card"><div class="q">Q1</div><h2>มีข้อความถูกส่งกี่ข้อความต่อวัน?</h2><div id="q1"></div></section>
+    <section class="card"><div class="q">Q2</div><h2>DAU / MAU ของแชท</h2><div id="q2"></div></section>
+    <section class="card"><div class="q">Q3</div><h2>ห้องไหน active ที่สุด?</h2><div id="q3"></div></section>
+    <section class="card"><div class="q">Q4</div><h2>Message delivery latency</h2><div id="q4"></div></section>
+    <section class="card"><div class="q">Q5</div><h2>ข้อความที่ส่งไม่สำเร็จ</h2><div id="q5"></div></section>
+    <section class="card"><div class="q">Q6</div><h2>ผู้ใช้อ่านหลังได้รับกี่วินาที?</h2><div id="q6"></div></section>
+  </div>
+  <p class="note">DAU = ผู้ใช้ไม่ซ้ำที่ส่งหรืออ่านข้อความในวันนั้น · MAU = ย้อนหลัง 30 วัน · latency = เวลาที่เครื่องผู้รับยืนยันว่าได้รับ − เวลาที่ server บันทึกข้อความ · วันที่ตามเวลาไทย · อัปเดตทุก 10 วินาที</p>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const sec = (ms) => (ms == null ? '–' : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} วิ`);
+const num = (n) => (n ?? 0).toLocaleString('th-TH');
+
+function big(value, unit) { const d = el('div', 'big', value); if (unit) d.append(' ', el('small', null, unit)); return d; }
+function stats(items) {
+  const w = el('div', 'stats');
+  for (const [label, value, cls] of items) { const s = el('div', 'stat'); s.append(el('b', cls, value), el('span', null, label)); w.append(s); }
+  return w;
+}
+function bars(rows, label, value, fmt = num) {
+  if (!rows.length) return el('div', 'empty', 'ยังไม่มีข้อมูลในช่วงนี้');
+  const max = Math.max(...rows.map(value), 1);
+  const w = el('div', 'bars');
+  for (const r of rows) {
+    const b = el('div', 'bar');
+    const track = el('div', 'track'); const fill = el('div', 'fill'); fill.style.width = `${(100 * value(r)) / max}%`; track.append(fill);
+    b.append(el('span', 'l', label(r)), track, el('span', 'v', fmt(value(r))));
+    w.append(b);
+  }
+  return w;
+}
+const dayLabel = (d) => new Date(d + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+
+function render(m) {
+  $('meta').textContent = `ข้อมูล ${m.range.days} วันล่าสุด · อัปเดต ${new Date(m.generatedAt).toLocaleTimeString('th-TH')}`;
+
+  const q1 = m.q1_messagesPerDay;
+  $('q1').replaceChildren(big(num(q1.total), 'ข้อความทั้งหมด'), bars(q1.perDay.slice(-14), (r) => dayLabel(r.day), (r) => r.messages));
+
+  const q2 = m.q2_activeUsers;
+  $('q2').replaceChildren(
+    stats([['DAU วันนี้', num(q2.dauToday)], ['DAU เฉลี่ย', q2.avgDau], ['MAU (30 วัน)', num(q2.mau)], ['DAU/MAU', q2.stickiness ?? '–']]),
+    bars(q2.perDay.slice(-14), (r) => dayLabel(r.day), (r) => r.dau));
+
+  const q3 = m.q3_mostActiveConversations;
+  if (!q3.length) $('q3').replaceChildren(el('div', 'empty', 'ยังไม่มีข้อมูลในช่วงนี้'));
+  else {
+    const t = el('table'); const head = el('tr');
+    ['ห้อง', 'ประเภท', 'ข้อความ', 'ผู้ส่ง'].forEach((h) => head.append(el('th', null, h))); t.append(head);
+    for (const r of q3) {
+      const tr = el('tr');
+      tr.append(el('td', null, r.type === 'group' ? r.name : r.name), el('td', null, r.type === 'group' ? 'กลุ่ม' : '1:1'),
+        el('td', 'n', num(r.messages)), el('td', 'n', num(r.senders)));
+      t.append(tr);
+    }
+    $('q3').replaceChildren(t);
+  }
+
+  const q4 = m.q4_deliveryLatency;
+  const t4 = el('table'); const h4 = el('tr');
+  ['', 'จำนวน', 'p50', 'p95'].forEach((h) => h4.append(el('th', null, h))); t4.append(h4);
+  for (const [label, s] of [['ทั้งหมด', q4.all], ['ผู้รับ online', q4.recipientOnline], ['ผู้รับ offline', q4.recipientOffline]]) {
+    const tr = el('tr'); tr.append(el('td', null, label), el('td', 'n', num(s.count)), el('td', 'n', sec(s.p50Ms)), el('td', 'n', sec(s.p95Ms))); t4.append(tr);
+  }
+  $('q4').replaceChildren(big(sec(q4.all.p50Ms), 'p50 ทั้งหมด'), t4);
+
+  const q5 = m.q5_sendFailures;
+  $('q5').replaceChildren(
+    big(`${q5.failedPct}%`, `(${num(q5.failed)} จาก ${num(q5.attempted)} ครั้ง)`),
+    q5.byReason.length ? bars(q5.byReason, (r) => r.reason, (r) => r.n) : el('div', 'empty', 'ไม่มีการส่งที่ล้มเหลว'),
+    stats([['ค้างไม่ถึงผู้รับเกิน 24 ชม.', num(q5.undeliveredOver24h), q5.undeliveredOver24h ? 'bad' : '']]));
+
+  const q6 = m.q6_timeToRead;
+  $('q6').replaceChildren(big(sec(q6.avgMs), 'เฉลี่ย'), stats([['p50', sec(q6.p50Ms)], ['p95', sec(q6.p95Ms)], ['จำนวนที่อ่าน', num(q6.count)]]));
+}
+
+async function load() {
+  try {
+    const res = await fetch(`/api/metrics?days=${$('days').value}`);
+    render(await res.json());
+  } catch (err) {
+    $('meta').textContent = 'โหลดข้อมูลไม่สำเร็จ — server ทำงานอยู่หรือไม่?';
+  }
+}
+$('days').onchange = load;
+load();
+setInterval(load, 10000);
+</script>
+</body>
+</html>
